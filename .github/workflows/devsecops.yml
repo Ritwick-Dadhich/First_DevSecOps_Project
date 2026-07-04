@@ -18,3 +18,17 @@ jobs:
         run: |
           pip install semgrep
           semgrep scan --config=auto
+
+  sca_scan:
+    name: Run SCA (Snyk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
