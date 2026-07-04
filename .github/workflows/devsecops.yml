@@ -26,6 +26,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # FIX: Install node modules so Snyk has a dependency tree to scan
+      - name: Install Application Dependencies
+        run: |
+          npm install --legacy-peer-deps
+
       - name: Run Snyk to check for vulnerabilities
         uses: snyk/actions/node@master
         env:
