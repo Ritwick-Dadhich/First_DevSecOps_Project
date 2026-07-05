@@ -15,7 +15,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install and Run Semgrep
-        # We tell Semgrep to save findings to a file, but continue the pipeline so we can upload it
         run: |
           pip install semgrep
           semgrep scan --config=auto --json -o semgrep-sast-report.json || true
@@ -38,7 +37,6 @@ jobs:
           npm install --legacy-peer-deps
 
       - name: Run Snyk and Generate Report
-        # We use '|| true' so the pipeline completes and allows us to save the report artifact
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
@@ -49,3 +47,31 @@ jobs:
         with:
           name: snyk-sca-report
           path: snyk-sca-report.json
+
+  build_and_push:
+    name: Build & Push Docker Image to AWS ECR
+    needs: [sast_scan, sca_scan] # Wait for security scans to pass first
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1 # 🚨 CHANGE THIS if you picked a region other than Mumbai!
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: juice-shop-devsecops
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
