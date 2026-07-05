@@ -50,7 +50,7 @@ jobs:
 
   build_and_push:
     name: Build & Push Docker Image to AWS ECR
-    needs: [sast_scan, sca_scan] # Wait for security scans to pass first
+    needs: [sast_scan, sca_scan]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -61,7 +61,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1 # 🚨 CHANGE THIS if you picked a region other than Mumbai!
+          aws-region: ap-south-1
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -75,3 +75,31 @@ jobs:
         run: |
           docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+  deploy:
+    name: Deploy Container to AWS EC2 Instance
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands to Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ubuntu
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 1. Install AWS CLI inside the server if it doesn't exist
+            if ! command -v aws &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y awscli
+            fi
+            
+            # 2. Authenticate the server's Docker client with your AWS Registry
+            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 538311878117.dkr.ecr.ap-south-1.amazonaws.com
+            
+            # 3. Clean up any older running instance of the application container
+            docker stop juice-shop-app || true
+            docker rm juice-shop-app || true
+            
+            # 4. Pull down the fresh image and execute it live on Port 3000!
+            docker pull 538311878117.dkr.ecr.ap-south-1.amazonaws.com/juice-shop-devsecops:latest
+            docker run -d --name juice-shop-app -p 3000:3000 538311878117.dkr.ecr.ap-south-1.amazonaws.com/juice-shop-devsecops:latest
