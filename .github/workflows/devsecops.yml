@@ -97,8 +97,21 @@ jobs:
         with:
           image-ref: ${{ steps.login-ecr.outputs.registry }}/juice-shop-devsecops:latest
           format: 'table'
-          exit-code: '0' # Keeps pipeline moving, but logs vulnerabilities clearly
+          exit-code: '0'
           severity: 'CRITICAL,HIGH'
+
+      - name: Generate CycloneDX SBOM (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/juice-shop-devsecops:latest
+          format: 'cyclonedx'
+          output: 'sbom.json'
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-bill-of-materials-sbom
+          path: sbom.json
 
       - name: Push Docker Image to ECR
         env:
