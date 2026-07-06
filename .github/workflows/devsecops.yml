@@ -7,8 +7,24 @@ on:
     branches: [ "master" ]
 
 jobs:
+  secrets_scan:
+    name: Run Secrets Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
   sast_scan:
     name: Run SAST (Semgrep)
+    needs: secrets_scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -27,6 +43,7 @@ jobs:
 
   sca_scan:
     name: Run SCA (Snyk)
+    needs: secrets_scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -67,13 +84,28 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push Docker Image
+      - name: Build and Tag Docker Image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: juice-shop-devsecops
           IMAGE_TAG: latest
         run: |
           docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+
+      - name: Run Container Image Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/juice-shop-devsecops:latest
+          format: 'table'
+          exit-code: '0' # Keeps pipeline moving, but logs vulnerabilities clearly
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push Docker Image to ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: juice-shop-devsecops
+          IMAGE_TAG: latest
+        run: |
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
   deploy:
